@@ -295,7 +295,7 @@ def download_control(_user_info):
                     if '.jpg' in url or '.jpeg' in url or '.png' in url or '.gif' in url:
                         url += f'?name=orig'
                     else:
-                        url += f'?format={img_format}name=orig'
+                        url += f'?format={img_format}&name=orig'
                 except Exception as e:
                     print(url)
                     return False
