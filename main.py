@@ -5,9 +5,13 @@ import httpx
 import asyncio
 import os
 import json
+import sys
+
+sys.path.append('.')
 from user_info import User_info
 from csv_gen import csv_gen
 from cache_gen import cache_gen
+from url_utils import quote_url
 
 max_concurrent_requests = 8     #最大并发数量，默认为8，对自己网络有自信的可以调高; 遇到多次下载失败时适当降低
 
@@ -47,6 +51,7 @@ cache_data = None
 down_log = False
 async_down = True
 autoSync = False
+
 
 start_time_stamp = 655028357000   #1990-10-04
 end_time_stamp = 2548484357000    #2050-10-04
@@ -88,8 +93,15 @@ with open('settings.json', 'r', encoding='utf8') as f:
         proxies = settings['proxy']
     else:
         proxies = None
+
 ############
-    img_format = settings['img_format']
+    if settings['image_format'] == 'orig':
+        orig_format = True
+        img_format = 'jpg'
+    else:
+        orig_format = False
+        img_format = settings['image_format']
+
     f.close()
 
 backup_stamp = start_time_stamp
@@ -107,7 +119,7 @@ def get_other_info(_user_info):
     url = 'https://twitter.com/i/api/graphql/xc8f1g7BYqr6VTzTbvNlGw/UserByScreenName?variables={"screen_name":"' + _user_info.screen_name + '","withSafetyModeUserFields":false}&features={"hidden_profile_likes_enabled":false,"hidden_profile_subscriptions_enabled":false,"responsive_web_graphql_exclude_directive_enabled":true,"verified_phone_label_enabled":false,"subscriptions_verification_info_verified_since_enabled":true,"highlights_tweets_tab_ui_enabled":true,"creator_subscriptions_tweet_preview_api_enabled":true,"responsive_web_graphql_skip_user_profile_image_extensions_enabled":false,"responsive_web_graphql_timeline_navigation_enabled":true}&fieldToggles={"withAuxiliaryUserLabels":false}'
     try:
         global request_count
-        response = httpx.get(url, headers=_headers, proxies=proxies).text
+        response = httpx.get(quote_url(url), headers=_headers, proxy=proxies).text
         request_count += 1
         raw_data = json.loads(response)
         _user_info.rest_id = raw_data['data']['user']['result']['rest_id']
@@ -234,7 +246,7 @@ def get_download_url(_user_info):
         url = url_top + url_bottom      #第一页,无cursor
     try:
         global request_count
-        response = httpx.get(url, headers=_headers, proxies=proxies).text
+        response = httpx.get(quote_url(url), headers=_headers, proxy=proxies).text
         request_count += 1
         try:
             raw_data = json.loads(response)
@@ -293,19 +305,22 @@ def download_control(_user_info):
                 try:
                     _file_name = f'{_user_info.save_path + os.sep}{prefix}_{_user_info.count + order}.{img_format}'
                     if '.jpg' in url or '.jpeg' in url or '.png' in url or '.gif' in url:
-                        url += f'?name=orig'
+                        url += f'?format={img_format}&name=orig'
                     else:
                         url += f'?format={img_format}&name=orig'
                 except Exception as e:
                     print(url)
                     return False
             count = 0
+            orig_fail = 0 # 0-原图下载成功 或未开启原图下载  1-JPEG 原图下载失败，尝试 PNG 原图下载  2-原图下载失败，尝试使用name=4096x4096下载
             while True:
                 try:
                     async with semaphore:
-                        async with httpx.AsyncClient(proxies=proxies) as client:
+                        async with httpx.AsyncClient(proxy=proxies) as client:
                             global down_count
-                            response = await client.get(url, timeout=(3.05, 16))        #如果出现第五次或以上的下载失败,且确认不是网络问题,可以适当降低最大并发数量
+                            response = await client.get(quote_url(url), timeout=(3.05, 16))        #如果出现第五次或以上的下载失败,且确认不是网络问题,可以适当降低最大并发数量
+                            if response.status_code == 404:
+                                raise Exception('404')
                             down_count += 1
                     with open(_file_name,'wb') as f:
                         f.write(response.content)
@@ -319,9 +334,21 @@ def download_control(_user_info):
             
                     break
                 except Exception as e:
-                    count += 1
-                    print(f'{_file_name}=====>第{count}次下载失败,正在重试(多次失败时请降低main.py第11行-异步模式)')
-                    print(url)
+                    if '.mp4' in url or img_format=="png" or str(e) != "404":
+                        count += 1
+                        print(f'{_file_name}=====>第{count}次下载失败,正在重试(多次失败时请降低main.py第16行-异步模式)')
+                        print(url)
+                    elif img_format!="png":
+                        if orig_fail == 0:
+                            orig_fail = 1
+                            if orig_format:
+                                url = url.replace('format=jpg', 'format=png')
+                                _file_name = re.sub(r'jpg$', "png", _file_name)
+                            else:
+                                url = url.replace('name=orig', 'name=4096x4096')
+                        elif orig_fail == 1: # 一般不会遇到下面这种情况
+                            orig_fail = 2
+                            url = url.replace('name=orig', 'name=4096x4096')
 
         while True:
             photo_lst = get_download_url(_user_info)
