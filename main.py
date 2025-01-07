@@ -311,6 +311,7 @@ def download_control(_user_info):
                 except Exception as e:
                     print(url)
                     return False
+            _file_name = _file_name.replace(' ','_')
             count = 0
             orig_fail = 0 # 0-原图下载成功 或未开启原图下载  1-JPEG 原图下载失败，尝试 PNG 原图下载  2-原图下载失败，尝试使用name=4096x4096下载
             while True:
