@@ -304,10 +304,10 @@ def download_control(_user_info):
             else:
                 try:
                     _file_name = f'{_user_info.save_path + os.sep}{prefix}_{_user_info.count + order}.{img_format}'
-                    if '.jpg' in url or '.jpeg' in url or '.png' in url or '.gif' in url:
+                    if img_format != 'png':
                         url += f'?name=orig'
                     else:
-                        url += f'?format={img_format}&name=orig'
+                        url += f'?format=png&name=orig'
                 except Exception as e:
                     print(url)
                     return False
